@@ -1,0 +1,56 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  gamesWon  Int      @default(0)
+  gamesLost Int      @default(0)
+  gamesDrawn Int     @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gamesAsPlayer1 Game[] @relation("Player1")
+  gamesAsPlayer2 Game[] @relation("Player2")
+}
+
+model Game {
+  id          String   @id @default(cuid())
+  player1Id   String
+  player2Id   String?
+  player2IsBot Boolean @default(false)
+  board       Json
+  currentTurn String
+  status      String   // 'waiting', 'active', 'completed', 'forfeited'
+  winner      String?
+  winType     String?  // 'horizontal', 'vertical', 'diagonal', 'draw'
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  duration    Int?     // in seconds
+
+  player1 Player @relation("Player1", fields: [player1Id], references: [id])
+  player2 Player? @relation("Player2", fields: [player2Id], references: [id])
+
+  @@index([status])
+  @@index([player1Id])
+  @@index([player2Id])
+}
+// prisma/schema.prisma
+
+// Add this model
+model AnalyticsSnapshot {
+  id           String   @id @default(cuid())
+  totalGames   Int      @map("total_games")
+  avgDuration  Float    @map("avg_duration")
+  snapshotTime DateTime @default(now()) @map("snapshot_time")
+
+  @@index([snapshotTime])
+  @@map("analytics_snapshots")
+}

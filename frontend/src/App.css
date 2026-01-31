@@ -1,0 +1,271 @@
+/* src/App.css */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Arial', sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  min-height: 100vh;
+}
+
+.App {
+  text-align: center;
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+h1 {
+  color: white;
+  margin-bottom: 20px;
+  font-size: 2.5em;
+  text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+/* Join Section */
+.join-section {
+  margin: 20px 0;
+}
+
+.join-section input {
+  padding: 12px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 25px;
+  margin-right: 10px;
+  width: 250px;
+}
+
+.join-section button,
+.new-game-btn {
+  padding: 12px 30px;
+  font-size: 16px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 25px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: all 0.3s;
+}
+
+.join-section button:hover,
+.new-game-btn:hover {
+  background: #45a049;
+  transform: scale(1.05);
+}
+
+/* Status */
+.status {
+  background: white;
+  padding: 15px;
+  border-radius: 10px;
+  margin: 20px auto;
+  max-width: 600px;
+  font-size: 18px;
+  font-weight: bold;
+  color: #333;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+/* Game Container */
+.game-container {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 30px;
+  flex-wrap: wrap;
+}
+
+/* Board Section */
+.board-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.board {
+  background: #2196F3;
+  padding: 15px;
+  border-radius: 15px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+  display: inline-block;
+}
+
+.row {
+  display: flex;
+}
+
+.cell {
+  width: 70px;
+  height: 70px;
+  background: white;
+  margin: 5px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.cell.clickable:hover {
+  background: #e0e0e0;
+  cursor: pointer;
+  transform: scale(1.05);
+}
+
+.disc {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  animation: drop 0.3s ease-out;
+}
+
+.disc.red {
+  background: radial-gradient(circle at 30% 30%, #ff6b6b, #c92a2a);
+  box-shadow: 0 4px 8px rgba(201, 42, 42, 0.4);
+}
+
+.disc.yellow {
+  background: radial-gradient(circle at 30% 30%, #ffd93d, #f59f00);
+  box-shadow: 0 4px 8px rgba(245, 159, 0, 0.4);
+}
+
+@keyframes drop {
+  from {
+    transform: translateY(-400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.column-numbers {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 10px;
+  width: 100%;
+  max-width: 560px;
+}
+
+.column-numbers span {
+  color: white;
+  font-weight: bold;
+  font-size: 18px;
+  width: 70px;
+  text-align: center;
+}
+
+/* Leaderboard Section */
+.leaderboard-section {
+  background: white;
+  padding: 20px;
+  border-radius: 15px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+  min-width: 300px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.leaderboard-section h2 {
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.leaderboard table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.leaderboard th {
+  background: #667eea;
+  color: white;
+  padding: 10px;
+  text-align: left;
+  position: sticky;
+  top: 0;
+}
+
+.leaderboard td {
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.leaderboard tr:hover {
+  background: #f5f5f5;
+}
+
+.leaderboard .current-player {
+  background: #e3f2fd;
+  font-weight: bold;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .game-container {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .cell {
+    width: 50px;
+    height: 50px;
+  }
+
+  .disc {
+    width: 42px;
+    height: 42px;
+  }
+
+  .column-numbers {
+    max-width: 400px;
+  }
+
+  .column-numbers span {
+    width: 50px;
+  }
+
+  h1 {
+    font-size: 2em;
+  }
+}
+/* Add to existing App.css */
+
+/* Winning cell highlight */
+.cell.winning {
+  background: #fff3cd !important;
+  animation: pulse-win 0.8s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+}
+
+.cell.winning .disc {
+  animation: pulse-disc 0.8s ease-in-out infinite;
+}
+
+@keyframes pulse-win {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(255, 215, 0, 1);
+  }
+}
+
+@keyframes pulse-disc {
+  0%, 100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.1);
+    filter: brightness(1.3);
+  }
+}

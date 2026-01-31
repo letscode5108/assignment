@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const SOCKET_URL = 'http://localhost:5000';
+const SOCKET_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+
 
 function App() {
   const [socket, setSocket] = useState(null);

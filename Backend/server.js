@@ -13,13 +13,21 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: ['http://localhost:3000',
+      'https://four-in-a-row-tau.vercel.app'
+    ],
+
     methods: ['GET', 'POST']
   }
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://four-in-a-row-tau.vercel.app',
+  ]
+}))
 app.use(express.json());
 
 // Routes

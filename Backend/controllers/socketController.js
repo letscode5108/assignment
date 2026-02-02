@@ -51,20 +51,19 @@ class SocketController {
           data: { username }
         });
       
-// ✅ Send player_created event
+        await kafkaProducer.sendEvent('game-analytics', {
+          type: 'player_created',
+          playerId: player.id,
+          username: player.username
+        });
+      }
+
       await kafkaProducer.sendEvent('game-analytics', {
-        type: 'player_created',
+        type: 'player_joined_queue',
         playerId: player.id,
         username: player.username
       });
-    }
-
-    // ✅ Send player_joined_queue event
-    await kafkaProducer.sendEvent('game-analytics', {
-      type: 'player_joined_queue',
-      playerId: player.id,
-      username: player.username
-    });
+      
       playerSockets.set(player.id, socket.id);
       socket.data.playerId = player.id;
       socket.data.username = username;
@@ -73,10 +72,8 @@ class SocketController {
       const waitingPlayer = Array.from(waitingPlayers.values())[0];
 
       if (waitingPlayer && waitingPlayer.playerId !== player.id) {
-        // Match with waiting player
         await this.createMatchedGame(socket, io, player, waitingPlayer);
       } else {
-        // Add to waiting queue
         waitingPlayers.set(player.id, {
           playerId: player.id,
           username: player.username,
@@ -86,12 +83,11 @@ class SocketController {
 
         socket.emit('waiting_for_opponent', { message: 'Waiting for opponent...' });
 
-        // Start timeout for bot match (3 seconds)
         setTimeout(async () => {
           if (waitingPlayers.has(player.id)) {
             await this.createBotGame(socket, io, player);
           }
-        }, 30000);
+        }, 10000);
       }
     } catch (error) {
       console.error('Join game error:', error);
@@ -116,16 +112,16 @@ class SocketController {
         player2: true
       }
     });
-    // Send game_started event
-  await kafkaProducer.sendEvent('game-analytics', {
-    type: 'game_started',
-    gameId: game.id,
-    player1Id: waitingPlayer.playerId,
-    player2Id: player.id,
-    player1Username: waitingPlayer.username,
-    player2Username: player.username,
-    vsBot: false
-  });
+
+    await kafkaProducer.sendEvent('game-analytics', {
+      type: 'game_started',
+      gameId: game.id,
+      player1Id: waitingPlayer.playerId,
+      player2Id: player.id,
+      player1Username: waitingPlayer.username,
+      player2Username: player.username,
+      vsBot: false
+    });
 
     activeGames.set(game.id, {
       ...game,
@@ -169,14 +165,14 @@ class SocketController {
         player1: true
       }
     });
-    // Send game_started event (vs bot)
-  await kafkaProducer.sendEvent('game-analytics', {
-    type: 'game_started',
-    gameId: game.id,
-    player1Id: player.id,
-    player1Username: player.username,
-    vsBot: true
-  });
+
+    await kafkaProducer.sendEvent('game-analytics', {
+      type: 'game_started',
+      gameId: game.id,
+      player1Id: player.id,
+      player1Username: player.username,
+      vsBot: true
+    });
 
     activeGames.set(game.id, {
       ...game,
@@ -194,95 +190,88 @@ class SocketController {
     });
   }
 
-async handleMakeMove(socket, io, data) {
-  try {
-    const { gameId, column } = data;
-    const playerId = socket.data.playerId;
+  async handleMakeMove(socket, io, data) {
+    try {
+      const { gameId, column } = data;
+      const playerId = socket.data.playerId;
 
-    if (column < 0 || column > 6) {
-      socket.emit('error', { message: 'Invalid column' });
-      return;
+      if (column < 0 || column > 6) {
+        socket.emit('error', { message: 'Invalid column' });
+        return;
+      }
+
+      const gameState = activeGames.get(gameId);
+      if (!gameState) {
+        socket.emit('error', { message: 'Game not found' });
+        return;
+      }
+
+      if (gameState.status !== 'active') {
+        socket.emit('error', { message: 'Game is not active' });
+        return;
+      }
+
+      if (gameState.currentTurn !== playerId) {
+        socket.emit('error', { message: 'Not your turn' });
+        return;
+      }
+
+      const board = gameState.board;
+      const row = GameLogic.getAvailableRow(board, column);
+
+      if (row === -1) {
+        socket.emit('error', { message: 'Column is full' });
+        return;
+      }
+
+      const playerColor = gameState.player1Id === playerId ? 'red' : 'yellow';
+      board[row][column] = playerColor;
+
+      const winResult = GameLogic.checkWin(board, row, column, playerColor);
+
+      if (winResult.won) {
+        await this.handleGameEnd(io, gameId, gameState, playerId, winResult.type, winResult.cells);
+        return;
+      }
+
+      if (GameLogic.isBoardFull(board)) {
+        await this.handleGameEnd(io, gameId, gameState, null, 'draw', []);
+        return;
+      }
+
+      const nextPlayer = gameState.player1Id === playerId ? 
+        (gameState.player2Id || 'bot') : gameState.player1Id;
+
+      gameState.currentTurn = nextPlayer;
+      gameState.board = board;
+
+      io.to(gameId).emit('move_made', {
+        row,
+        column,
+        color: playerColor,
+        nextTurn: nextPlayer,
+        board
+      });
+
+      await kafkaProducer.sendEvent('game-analytics', {
+        type: 'move_made',
+        gameId,
+        playerId,
+        column,
+        row,
+        color: playerColor
+      });
+
+      if (gameState.isBot && nextPlayer === 'bot') {
+        setTimeout(() => {
+          this.makeBotMove(io, gameId, gameState);
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Make move error:', error);
+      socket.emit('error', { message: 'Failed to make move' });
     }
-
-    const gameState = activeGames.get(gameId);
-    if (!gameState) {
-      socket.emit('error', { message: 'Game not found' });
-      return;
-    }
-
-    if (gameState.status !== 'active') {
-      socket.emit('error', { message: 'Game is not active' });
-      return;
-    }
-
-    // ✅ FIX: This is the important part
-    if (gameState.currentTurn !== playerId) {
-      socket.emit('error', { message: 'Not your turn' });
-      return;
-    }
-
-    const board = gameState.board;
-    const row = GameLogic.getAvailableRow(board, column);
-
-    if (row === -1) {
-      socket.emit('error', { message: 'Column is full' });
-      return;
-    }
-
-    // Make the move
-    const playerColor = gameState.player1Id === playerId ? 'red' : 'yellow';
-    board[row][column] = playerColor;
-
-    // Check for win
-    const winResult = GameLogic.checkWin(board, row, column, playerColor);
-
-    if (winResult.won) {
-      await this.handleGameEnd(io, gameId, gameState, playerId, winResult.type, winResult.cells);
-      return;
-    }
-
-    // Check for draw
-    if (GameLogic.isBoardFull(board)) {
-      await this.handleGameEnd(io, gameId, gameState, null, 'draw', []);
-      return;
-    }
-
-    // ✅ FIX: Switch turn properly
-    const nextPlayer = gameState.player1Id === playerId ? 
-      (gameState.player2Id || 'bot') : gameState.player1Id;
-
-    gameState.currentTurn = nextPlayer;
-    gameState.board = board;
-
-    // Emit move to all players in game
-    io.to(gameId).emit('move_made', {
-      row,
-      column,
-      color: playerColor,
-      nextTurn: nextPlayer,
-      board
-    });
-    //✅ Send move_made event
-await kafkaProducer.sendEvent('game-analytics', {
-  type: 'move_made',
-  gameId,
-  playerId,
-  column,
-  row,
-  color: playerColor
-});
-
-    // If bot's turn, make bot move
-    if (gameState.isBot && nextPlayer === 'bot') {
-      setTimeout(() => {
-        this.makeBotMove(io, gameId, gameState);
-      }, 500);
-    }
-  } catch (error) {
-    console.error('Make move error:', error);
-    socket.emit('error', { message: 'Failed to make move' });
   }
-}
 
   async makeBotMove(io, gameId, gameState) {
     const board = gameState.board;
@@ -324,7 +313,6 @@ await kafkaProducer.sendEvent('game-analytics', {
     gameState.winner = winnerId;
     gameState.winType = winType;
 
-    // Update database
     await prisma.game.update({
       where: { id: gameId },
       data: {
@@ -335,19 +323,19 @@ await kafkaProducer.sendEvent('game-analytics', {
         duration
       }
     });
-//✅ Send game_ended event
-  await kafkaProducer.sendEvent('game-analytics', {
-    type: 'game_ended',
-    gameId,
-    winnerId: winnerId === 'bot' ? 'bot' : winnerId,
-    loserId: gameState.player1Id === winnerId ? gameState.player2Id : gameState.player1Id,
-    winType,
-    duration,
-    vsBot: gameState.isBot || false,
-    player1Id: gameState.player1Id,
-    player2Id: gameState.player2Id
-  });
-    // Update player stats
+
+    await kafkaProducer.sendEvent('game-analytics', {
+      type: 'game_ended',
+      gameId,
+      winnerId: winnerId === 'bot' ? 'bot' : winnerId,
+      loserId: gameState.player1Id === winnerId ? gameState.player2Id : gameState.player1Id,
+      winType,
+      duration,
+      vsBot: gameState.isBot || false,
+      player1Id: gameState.player1Id,
+      player2Id: gameState.player2Id
+    });
+
     if (winnerId && winnerId !== 'bot') {
       await prisma.player.update({
         where: { id: winnerId },
@@ -381,8 +369,14 @@ await kafkaProducer.sendEvent('game-analytics', {
       });
     }
 
+    let winnerSocketId = winnerId;
+    if (winnerId && winnerId !== 'bot') {
+      winnerSocketId = gameState.player1Id === winnerId ? 
+        gameState.player1SocketId : gameState.player2SocketId;
+    }
+
     io.to(gameId).emit('game_ended', {
-      winner: winnerId,
+      winner: winnerSocketId,
       winType,
       board: gameState.board,
       duration,
@@ -392,66 +386,126 @@ await kafkaProducer.sendEvent('game-analytics', {
     activeGames.delete(gameId);
   }
 
-  handleDisconnect(socket) {
-    console.log(`Client disconnected: ${socket.id}`);
-    
-    const playerId = socket.data.playerId;
-    if (!playerId) return;
-
-    // Remove from waiting players
-    waitingPlayers.delete(playerId);
-
-    // Find active game
-    for (const [gameId, gameState] of activeGames.entries()) {
-      if (gameState.player1Id === playerId || gameState.player2Id === playerId) {
-        // Start 30 second timer
-        disconnectedPlayers.set(playerId, {
-          gameId,
-          timestamp: Date.now(),
-          timeout: setTimeout(async () => {
-            await this.forfeitGame(gameId, gameState, playerId);
-          }, 30000)
-        });
-        break;
-      }
-    }
-
-    playerSockets.delete(playerId);
+handleDisconnect(socket, io) {
+  console.log(`Client disconnected: ${socket.id}`);
+  
+  const playerId = socket.data.playerId;
+  console.log('Player ID from socket.data:', playerId); // ✅ ADD THIS
+  
+  if (!playerId) {
+    console.log(' No playerId in socket.data on disconnect');
+    return;
   }
 
-  async handleReconnect(socket, io, data) {
-    const { username, gameId } = data;
+  waitingPlayers.delete(playerId);
 
-    const player = await prisma.player.findUnique({
-      where: { username }
-    });
+  for (const [gameId, gameState] of activeGames.entries()) {
+    if (gameState.player1Id === playerId || gameState.player2Id === playerId) {
+      console.log(` Found active game ${gameId} for player ${playerId}`); // ✅ ADD THIS
+      
+      disconnectedPlayers.set(playerId, {
+        gameId,
+        timestamp: Date.now(),
+        timeout: setTimeout(async () => {
+          console.log(` 30 seconds expired for player ${playerId}`); 
+          await this.forfeitGame(io, gameId, gameState, playerId);
+        }, 30000)
+      });
+      
+      console.log('Disconnected players map:', Array.from(disconnectedPlayers.keys())); 
+      break;
+    }
+  }
+
+  playerSockets.delete(playerId);
+}
+
+async handleReconnect(socket, io, data) {
+  const { username, gameId, playerId } = data; 
+  
+  console.log('=== RECONNECT ATTEMPT ===');
+  console.log('Username:', username);
+  console.log('Game ID:', gameId);
+  console.log('Player ID from client:', playerId); 
+
+  try {
+    //  the playerId sent from client instead of looking up by username
+    let player;
+    if (playerId) {
+      player = await prisma.player.findUnique({
+        where: { id: playerId }
+      });
+    }
+    
+    // Fallback to username lookup if playerId not provided
+    if (!player) {
+      player = await prisma.player.findUnique({
+        where: { username }
+      });
+    }
 
     if (!player) {
-      socket.emit('error', { message: 'Player not found' });
+      console.log(' Player not found in database');
+      socket.emit('reconnect_failed', { message: 'Player not found' });
       return;
     }
 
+    console.log(' Player found:', player.id);
+
+    const gameState = activeGames.get(gameId);
+    if (!gameState) {
+      console.log(' Game not in activeGames');
+      console.log('Active games:', Array.from(activeGames.keys()));
+      socket.emit('reconnect_failed', { message: 'Game no longer exists. It was forfeited.' });
+      return;
+    }
+
+    console.log(' Game state found');
+    console.log('Disconnected players:', Array.from(disconnectedPlayers.keys()));
+
     const disconnectInfo = disconnectedPlayers.get(player.id);
+    console.log('Disconnect info for player:', disconnectInfo);
+    
     if (disconnectInfo && disconnectInfo.gameId === gameId) {
+      console.log(' RECONNECTION SUCCESSFUL');
+      
       clearTimeout(disconnectInfo.timeout);
       disconnectedPlayers.delete(player.id);
 
-      playerSockets.set(player.id, socket.id);
       socket.data.playerId = player.id;
       socket.data.username = username;
+      playerSockets.set(player.id, socket.id);
 
-      const gameState = activeGames.get(gameId);
-      if (gameState) {
-        socket.join(gameId);
-        socket.emit('game_reconnected', {
-          game: gameState,
-          playerNumber: gameState.player1Id === player.id ? 1 : 2
-        });
+      if (gameState.player1Id === player.id) {
+        gameState.player1SocketId = socket.id;
+      } else if (gameState.player2Id === player.id) {
+        gameState.player2SocketId = socket.id;
       }
-    }
-  }
 
-  async forfeitGame(gameId, gameState, playerId) {
+      socket.join(gameId);
+
+      socket.emit('game_reconnected', {
+        game: gameState,
+        playerNumber: gameState.player1Id === player.id ? 1 : 2
+      });
+
+      socket.to(gameId).emit('opponent_reconnected', {
+        message: `${username} has reconnected!`
+      });
+
+      console.log(` Player ${username} (${player.id}) reconnected to game ${gameId}`);
+    } else {
+      console.log(' Player not in disconnectedPlayers or wrong game');
+      console.log('Expected gameId:', gameId);
+      console.log('DisconnectInfo gameId:', disconnectInfo?.gameId);
+      socket.emit('reconnect_failed', { message: 'Reconnection window expired. Game was forfeited.' });
+    }
+  } catch (error) {
+    console.error('Reconnect error:', error);
+    socket.emit('reconnect_failed', { message: 'Failed to reconnect' });
+  }
+}
+  async forfeitGame(io, gameId, gameState, playerId) {
     const winnerId = gameState.player1Id === playerId ? 
       gameState.player2Id : gameState.player1Id;
 
@@ -479,12 +533,26 @@ await kafkaProducer.sendEvent('game-analytics', {
       data: { gamesLost: { increment: 1 } }
     });
 
+    let winnerSocketId = winnerId;
+    if (winnerId && winnerId !== 'bot') {
+      winnerSocketId = gameState.player1Id === winnerId ? 
+        gameState.player1SocketId : gameState.player2SocketId;
+    }
+
+    io.to(gameId).emit('game_ended', {
+      winner: winnerSocketId || 'bot',
+      winType: 'forfeit',
+      board: gameState.board,
+      duration,
+      winningCells: [],
+      forfeited: true
+    });
+
     activeGames.delete(gameId);
     disconnectedPlayers.delete(playerId);
   }
 }
 
-// Export a single instance
 const socketController = new SocketController();
 
 module.exports = {

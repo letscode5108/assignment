@@ -14,12 +14,13 @@ class KafkaProducer {
 
     this.producer = this.kafka.producer();
     this.isConnected = false;
+    this.enabled = process.env.KAFKA_ENABLED === 'true';
     
   }
 
   async connect() {
-    if (process.env.KAFKA_ENABLED !== 'true') {
-    // console.log('ℹ Kafka disabled - running without analytics');
+    if (!this.enabled) {
+     console.log('ℹ Kafka disabled - running without analytics');
     return;
   }
     try {

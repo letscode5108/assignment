@@ -14,7 +14,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: ['http://localhost:3000',
-      'https://assignment-xi-five.vercel.app/'
+      'https://assignment-xi-five.vercel.app'
     ],
 
     methods: ['GET', 'POST']
@@ -25,7 +25,7 @@ const io = new Server(server, {
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://four-in-a-row-tau.vercel.app',
+    'https://assignment-xi-five.vercel.app',
   ]
 }))
 app.use(express.json());
